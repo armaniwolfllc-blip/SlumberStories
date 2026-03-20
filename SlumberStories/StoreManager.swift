@@ -2,6 +2,7 @@ import Foundation
 import StoreKit
 import Combine
 
+@MainActor
 class StoreManager: ObservableObject {
 
     static let productId = "com.armaniwolf.slumberstories.premium.monthly"
@@ -42,7 +43,7 @@ class StoreManager: ObservableObject {
     func fetchProducts() async {
         do {
             let products = try await Product.products(for: [StoreManager.productId])
-            await MainActor.run { self.subscriptionProduct = products.first }
+            self.subscriptionProduct = products.first
         } catch {
             print("Failed to fetch products: \(error)")
         }
@@ -55,7 +56,7 @@ class StoreManager: ObservableObject {
             switch result {
             case .success(let verification):
                 let transaction = try checkVerified(verification)
-                await MainActor.run { self.isPremiumUnlocked = true }
+                self.isPremiumUnlocked = true
                 await transaction.finish()
                 return true
             case .userCancelled: return false
@@ -77,7 +78,7 @@ class StoreManager: ObservableObject {
                 break
             }
         }
-        await MainActor.run { self.isPremiumUnlocked = foundActive }
+        self.isPremiumUnlocked = foundActive
     }
 
     func checkVerified<T>(_ result: VerificationResult<T>) throws -> T {
@@ -87,11 +88,11 @@ class StoreManager: ObservableObject {
         }
     }
 
-    func listenForTransactions() -> Task<Void, Error> {
+    nonisolated func listenForTransactions() -> Task<Void, Error> {
         Task.detached { [weak self] in
             for await result in Transaction.updates {
                 guard let self = self else { return }
-                if let transaction = try? self.checkVerified(result),
+                if let transaction = try? await self.checkVerified(result),
                    transaction.productID == StoreManager.productId {
                     await MainActor.run { self.isPremiumUnlocked = true }
                     await transaction.finish()
