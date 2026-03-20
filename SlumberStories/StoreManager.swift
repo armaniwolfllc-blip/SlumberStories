@@ -89,13 +89,18 @@ class StoreManager: ObservableObject {
     }
 
     nonisolated func listenForTransactions() -> Task<Void, Error> {
-        Task.detached { [weak self] in
+        let productId = StoreManager.productId
+        return Task.detached { [weak self] in
             for await result in Transaction.updates {
                 guard let self = self else { return }
-                if let transaction = try? await self.checkVerified(result),
-                   transaction.productID == StoreManager.productId {
-                    await MainActor.run { self.isPremiumUnlocked = true }
-                    await transaction.finish()
+                do {
+                    let transaction = try await self.checkVerified(result)
+                    if transaction.productID == productId {
+                        await MainActor.run { self.isPremiumUnlocked = true }
+                        await transaction.finish()
+                    }
+                } catch {
+                    print("Transaction verification failed: \(error)")
                 }
             }
         }
